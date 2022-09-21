@@ -7,7 +7,7 @@ import { Device } from '../interface/Device';
 import { ButtonService, FanService, LightbulbService, SwitchService } from '../Services';
 import { Observer } from '../Observer';
 
-export class CeilingFanAccessory implements BondAccessory  {
+export class CeilingFanAccessory implements BondAccessory {
   platform: BondPlatform
   accessory: PlatformAccessory
   fanService: FanService
@@ -54,19 +54,11 @@ export class CeilingFanAccessory implements BondAccessory  {
       this.minStep = 1;
       this.maxValue = this.values.length;
     }
-    
+
     this.fanService = new FanService(platform, accessory);
 
-    if (device.properties.max_speed === undefined) {
-      if (Device.canIncreaseDecreaseSpeed(device)) {
-        this.increaseSpeedService = new ButtonService(platform, accessory, `${accessory.displayName} Increase Speed`, 'IncreaseSpeed');
-        this.decreaseSpeedService = new ButtonService(platform, accessory, `${accessory.displayName} Decrease Speed`, 'DecreaseSpeed');
-      } else {
-        this.removeService(`${accessory.displayName} Increase Speed`);
-        this.removeService(`${accessory.displayName} Decrease Speed`);
-        this.platform.error(accessory, 'Fan Speed is not supported (missing max_speed property or IncreaseSpeed/DescreaseSpeed actions).');
-      }
-    }
+    this.increaseSpeedService = new ButtonService(platform, accessory, `Increase Fan Speed`, 'IncreaseSpeed');
+    this.decreaseSpeedService = new ButtonService(platform, accessory, `Decrease Fan Speed`, 'DecreaseSpeed');
 
     if (Device.CFhasUpDownLight(device)) {
       this.upLightService = new LightbulbService(platform, accessory, `${accessory.displayName} Up Light`, 'UpLight');
@@ -79,7 +71,7 @@ export class CeilingFanAccessory implements BondAccessory  {
         // Remove services if previously added
         this.removeService('Toggle Up Light State');
         this.removeService('Toggle Down Light State');
-      } 
+      }
 
       if (includeDimmer && Device.HasDimmer(device)) {
         this.upLightDimmerService = new SwitchService(platform, accessory, `${accessory.displayName} Up Light Dimmer`, 'UpLight');
@@ -95,7 +87,7 @@ export class CeilingFanAccessory implements BondAccessory  {
         this.toggleLightService = new ButtonService(platform, accessory, 'Toggle Light State', 'ToggleState');
       } else {
         this.removeService('Toggle Light State');
-      } 
+      }
 
       if (includeDimmer && Device.HasDimmer(device)) {
         this.dimmerService = new SwitchService(platform, accessory, `${accessory.displayName} Dimmer`, 'Dimmer');
@@ -120,7 +112,7 @@ export class CeilingFanAccessory implements BondAccessory  {
   updateState(state: BondState) {
     // Power
     this.fanService.on.updateValue(state.power === 1);
-    
+
     // Speed
     if (this.fanService.rotationSpeed) {
       let value = 0;
@@ -163,8 +155,8 @@ export class CeilingFanAccessory implements BondAccessory  {
     this.observeFanPower(bond, device);
     this.observeFanSpeed(bond, device);
     this.observeFanDirection(bond, device);
-    this.observeFanIncreaseSpeed(bond, device);
-    this.observeFanDecreaseSpeed(bond, device);
+    this.observeFanIncreaseSpeed();
+    this.observeFanDecreaseSpeed();
 
     if (this.lightService) {
       this.lightService.observe(this.platform, bond, this.accessory);
@@ -201,7 +193,7 @@ export class CeilingFanAccessory implements BondAccessory  {
 
     Observer.set(this.fanService.on, async (value) => {
       await bond.api.toggleFan(device, value)
-        .then(() => { 
+        .then(() => {
           this.platform.debug(this.accessory, `Set fan power: ${value}`);
         })
         .catch((error: string) => {
@@ -225,7 +217,7 @@ export class CeilingFanAccessory implements BondAccessory  {
       if (step === 0) {
         // Step of 0 is the same as turning the fan off. This is handled in the fan power observer
         return;
-      } 
+      }
       const index = step as number / this.minStep - 1;
       const speed = this.values[index];
 
@@ -255,35 +247,50 @@ export class CeilingFanAccessory implements BondAccessory  {
     });
   }
 
-  private observeFanIncreaseSpeed(bond: Bond, device: Device) {
+  private observeFanIncreaseSpeed() {
     if (!this.increaseSpeedService) {
       return;
     }
 
-    Observer.set(this.increaseSpeedService.on, async (value) => {
-      await bond.api.increaseSpeed(device)
-        .then(() => {
-          this.platform.debug(this.accessory, `Increased fan speed: ${value}`);
-        })
-        .catch((error: string) => {
-          this.platform.error(this.accessory, `Error increasing fan speed: ${error}`);
-        });
+    Observer.set(this.increaseSpeedService.on, async (_) => {
+      if (this.fanService.rotationSpeed) {
+        if (this.fanService.on.value === true) {
+          switch (this.fanService.rotationSpeed.value) {
+            case 33:
+              this.fanService.rotationSpeed.setValue(66);
+              break;
+            default:
+              this.fanService.rotationSpeed.setValue(99);
+          }
+        } else {
+          this.fanService.rotationSpeed.setValue(33);
+        }
+      }
+      this.platform.log(`Increased fan speed`);
     });
   }
 
-  private observeFanDecreaseSpeed(bond: Bond, device: Device) {
+  private observeFanDecreaseSpeed() {
     if (!this.decreaseSpeedService) {
       return;
     }
 
-    Observer.set(this.decreaseSpeedService.on, async (value) => {
-      await bond.api.decreaseSpeed(device)
-        .then(() => {
-          this.platform.debug(this.accessory, `Decreased fan speed: ${value}`);
-        })
-        .catch((error: string) => {
-          this.platform.error(this.accessory, `Error decreasing fan speed: ${error}`);
-        });
+    Observer.set(this.decreaseSpeedService.on, async (_) => {
+      if (this.fanService.rotationSpeed) {
+        if (this.fanService.on.value === true) {
+          switch (this.fanService.rotationSpeed.value) {
+            case 33:
+              this.fanService.on.setValue(false);
+              break;
+            case 66:
+              this.fanService.rotationSpeed.setValue(33);
+              break;
+            default:
+              this.fanService.rotationSpeed.setValue(66);
+          }
+        }
+      }
+      this.platform.log(`Decreased fan speed`);
     });
   }
 
@@ -303,7 +310,7 @@ export class CeilingFanAccessory implements BondAccessory  {
       } else {
         promise = bond.api.toggleState(device, 'light');
       }
-      
+
       await promise
         .then(() => {
           this.platform.debug(this.accessory, 'Light state toggled');
